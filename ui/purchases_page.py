@@ -1,13 +1,19 @@
+import sqlite3
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QHeaderView,
     QBoxLayout, QSizePolicy, QMessageBox
 )
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt
-from database.db_functions import fetch_products_with_invoice, fetch_invoices
+from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtCore import Qt, QSize
+from database.db_functions import fetch_products_with_invoice, fetch_invoices, delete_product_from_invoice
 from popups.add_purchase_dialog import AddPurchaseDialog
-
+from functools import partial
+from popups.edit_purchase_dialog import EditPurchaseDialog
+from popups.details_dialog import DetailsDialog
+from popups.edit_invoice_dialog import EditInvoiceDialog
+from popups.details_invoice_dialog import DetailsInvoiceDialog
+import os
 
 class PurchasesPage(QWidget):
     def __init__(self):
@@ -58,9 +64,12 @@ class PurchasesPage(QWidget):
         self.products_table = QTableWidget()
         self.products_table.setColumnCount(6)
         self.products_table.setHorizontalHeaderLabels(
-            ["اسم المنتج", "تاريخ الفاتورة", "الكمية", "سعر الوحدة", "السعر الإجمالي", "الإجراءات"]
+            ["اسم المنتج", "تاريخ الفاتورة", "سعر الوحدة", "الكمية",  "السعر الإجمالي", "الإجراءات"]
         )
         self.setup_table_style(self.products_table)
+        self.products_table.setMaximumHeight(10 * 40 + 40)
+        self.products_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.products_table.verticalHeader().setDefaultSectionSize(40)
         main_layout.addWidget(self.products_table)
 
         # ---- Invoices Section ----
@@ -85,13 +94,10 @@ class PurchasesPage(QWidget):
             ["تاريخ الفاتورة", "عدد المنتجات", "إجمالي السعر", "الإجراءات"]
         )
         self.setup_table_style(self.invoices_table)
+        self.invoices_table.setMaximumHeight(10 * 40 + 40)
+        self.invoices_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.invoices_table.verticalHeader().setDefaultSectionSize(35)
         main_layout.addWidget(self.invoices_table)
-
-        # ---- Footer ----
-        footer = QLabel("by hadil yahi")
-        footer.setFont(QFont("29LT Bukra", 10))
-        footer.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        main_layout.addWidget(footer)
 
         self.setLayout(main_layout)
 
@@ -132,18 +138,78 @@ class PurchasesPage(QWidget):
     def load_products(self, keyword=None):
         rows = fetch_products_with_invoice()
         self.products_table.setRowCount(0)
-        for idx, r in enumerate(rows):
-            if keyword and keyword not in r["name"]:
+
+        # ترتيب من الأحدث للأقدم
+        rows_sorted = sorted(rows, key=lambda x: (x["invoice_date"], x["purchase_id"]), reverse=True)
+
+        # تحديد آخر عملية شراء لكل منتج
+        last_purchase_index = {}
+        for idx, r in enumerate(rows_sorted):
+            name = r["product_name"]
+            if name not in last_purchase_index:
+                last_purchase_index[name] = idx
+
+        keyword_lower = keyword.lower().strip() if keyword else None
+        row_idx = 0
+
+        # تحميل البيانات في الجدول
+        for idx, r in enumerate(rows_sorted):
+            name = r["product_name"]
+            date = r["invoice_date"]
+            price_per_unit = float(r["price_per_unit"])
+            quantity = float(r["quantity"])
+            total = float(r["total_price"])
+
+            # فلترة حسب الاسم
+            if keyword_lower and keyword_lower not in name.lower():
                 continue
 
-            self.products_table.insertRow(idx)
-            self.products_table.setItem(idx, 0, QTableWidgetItem(r["name"]))
-            self.products_table.setItem(idx, 1, QTableWidgetItem(r["invoice_date"]))
-            self.products_table.setItem(idx, 2, QTableWidgetItem(str(r["quantity"])))
-            self.products_table.setItem(idx, 3, QTableWidgetItem(str(r["price_per_unit"])))
-            self.products_table.setItem(idx, 4, QTableWidgetItem(str(r["total_price"])))
+            self.products_table.insertRow(row_idx)
+            self.products_table.setItem(row_idx, 0, QTableWidgetItem(name))
+            self.products_table.setItem(row_idx, 1, QTableWidgetItem(date))
 
-            self.add_action_buttons(self.products_table, idx, r["id"])
+            # أيقونات الأسهم
+            icon_label = QLabel()
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "icons")
+            up_icon = os.path.join(icon_dir, "arrow_up.svg")
+            down_icon = os.path.join(icon_dir, "arrow_down.svg")
+            equal_icon = os.path.join(icon_dir, "equal.svg")
+
+            if idx == last_purchase_index[name]:
+                # مقارنة مع العملية السابقة (الأقدم)
+                next_price = None
+                for next_r in rows_sorted[idx+1:]:
+                    if next_r["product_name"] == name:
+                        next_price = float(next_r["price_per_unit"])
+                        break
+                if next_price is not None:
+                    if price_per_unit > next_price:
+                        icon_label.setPixmap(QIcon(up_icon).pixmap(QSize(16, 16)))
+                    elif price_per_unit < next_price:
+                        icon_label.setPixmap(QIcon(down_icon).pixmap(QSize(16, 16)))
+                    else:
+                        icon_label.setPixmap(QIcon(equal_icon).pixmap(QSize(16, 16)))
+                else:
+                    icon_label.setPixmap(QIcon(equal_icon).pixmap(QSize(16, 16)))
+            else:
+                icon_label.clear()
+
+            price_widget = QWidget()
+            layout = QHBoxLayout(price_widget)
+            layout.setContentsMargins(4, 0, 4, 0)
+            layout.setSpacing(6)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(icon_label)
+            layout.addWidget(QLabel(f"{price_per_unit:.2f}"))
+            self.products_table.setCellWidget(row_idx, 2, price_widget)
+
+            self.products_table.setItem(row_idx, 3, QTableWidgetItem(str(quantity)))
+            self.products_table.setItem(row_idx, 4, QTableWidgetItem(f"{total:.2f}"))
+
+            # أزرار الإجراءات
+            self.add_action_buttons(self.products_table, row_idx, r["purchase_id"], record_type="product")
+            row_idx += 1
 
     # ==========================
     # Load invoices table
@@ -151,34 +217,68 @@ class PurchasesPage(QWidget):
     def load_invoices(self, keyword=None):
         rows = fetch_invoices()
         self.invoices_table.setRowCount(0)
-        for idx, r in enumerate(rows):
+        rows_sorted = sorted(rows, key=lambda x: x["date"], reverse=True)
+        keyword_lower = keyword.lower().strip() if keyword else None
+        row_idx = 0
+        for r in rows_sorted:
             date_val = r["date"]
-            if keyword and keyword not in date_val:
+            if keyword_lower and keyword_lower not in date_val.lower():
                 continue
-
-            self.invoices_table.insertRow(idx)
-            self.invoices_table.setItem(idx, 0, QTableWidgetItem(date_val))
-            self.invoices_table.setItem(idx, 1, QTableWidgetItem(str(r["num_products"])))
-            self.invoices_table.setItem(idx, 2, QTableWidgetItem(str(r["total_price"])))
-
-            self.add_action_buttons(self.invoices_table, idx, r["id"])
+            self.invoices_table.insertRow(row_idx)
+            self.invoices_table.setItem(row_idx, 0, QTableWidgetItem(date_val))
+            self.invoices_table.setItem(row_idx, 1, QTableWidgetItem(str(r["num_products"])))
+            self.invoices_table.setItem(row_idx, 2, QTableWidgetItem(str(r["total_price"])))
+            self.add_action_buttons(self.invoices_table, row_idx, r["id"], record_type="invoice")
+            row_idx += 1
 
     # ==========================
     # Add buttons to table row
     # ==========================
-    def add_action_buttons(self, table, row_idx, record_id):
+    def add_action_buttons(self, table, row_idx, record_id, record_type="product"):
+        icon_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "icons")
+        icons = {
+            "delete": os.path.join(icon_dir, "delete.svg"),
+            "edit": os.path.join(icon_dir, "edit.svg"),
+            "details": os.path.join(icon_dir, "more.svg"),
+            "print": os.path.join(icon_dir, "printe.svg"),
+        }
+
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(6)
         layout.setDirection(QBoxLayout.Direction.RightToLeft)
 
-        btn_delete = QPushButton("🗑")
-        btn_delete.setFixedSize(28, 28)
-        btn_delete.setStyleSheet("background:none; border:none; color:#e53935; font-size:16px;")
-        btn_delete.clicked.connect(lambda _, rid=record_id: self.delete_record(rid))
+        btn_size = QSize(28, 28)
+        icon_size = QSize(18, 18)
 
+        def make_icon_button(icon_path, tooltip, callback):
+            btn = QPushButton()
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedSize(btn_size)
+            btn.setToolTip(tooltip)
+            if os.path.exists(icon_path):
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(icon_size)
+            else:
+                btn.setText(tooltip[0:2])
+            btn.setStyleSheet("background:none; border:none;")
+            btn.clicked.connect(callback)
+            return btn
+
+        btn_delete = make_icon_button(icons["delete"], "حذف", partial(self.delete_record, record_id, record_type))
         layout.addWidget(btn_delete)
+
+        btn_edit = make_icon_button(icons["edit"], "تعديل", partial(self.edit_record, record_id, record_type))
+        layout.addWidget(btn_edit)
+
+        btn_details = make_icon_button(icons["details"], "تفاصيل", partial(self.view_details, record_id, record_type))
+        layout.addWidget(btn_details)
+
+        if record_type == "invoice":
+            btn_print = make_icon_button(icons["print"], "طباعة", partial(self.print_invoice, record_id))
+            layout.addWidget(btn_print)
+
         table.setCellWidget(row_idx, table.columnCount() - 1, widget)
 
     # ==========================
@@ -193,16 +293,35 @@ class PurchasesPage(QWidget):
         self.load_invoices(keyword if keyword else None)
 
     # ==========================
-    # Delete record
+    # Action handlers
     # ==========================
-    def delete_record(self, record_id):
+    def delete_record(self, record_id, record_type="product"):
         confirm = QMessageBox.question(
             self, "تأكيد الحذف", "هل أنت متأكد من الحذف؟",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
-            # هنا يمكن الحذف من purchases أو invoices حسب المكان
-            # بعد الحذف، إعادة تحميل الجدولين
+            if record_type == "product":
+                delete_product_from_invoice(record_id)
             self.load_products()
             self.load_invoices()
             QMessageBox.information(self, "تم", "تم الحذف بنجاح ✅")
+
+    def edit_record(self, record_id, record_type="product"):
+        if record_type == "product":
+            dlg = EditPurchaseDialog(record_id, record_type)
+        else:
+            dlg = EditInvoiceDialog(record_id)
+        if dlg.exec():
+            self.load_products()
+            self.load_invoices()
+
+    def view_details(self, record_id, record_type="product"):
+        if record_type == "product":
+            dlg = DetailsDialog(record_id, record_type)
+        else:
+            dlg = DetailsInvoiceDialog(record_id)
+        dlg.exec()
+
+    def print_invoice(self, invoice_id):
+        QMessageBox.information(self, "طباعة", f"طباعة الفاتورة (id={invoice_id})")

@@ -159,14 +159,21 @@ class AddPurchaseDialog(QDialog):
         layout = QHBoxLayout(row)
         layout.setSpacing(10)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setDirection(QHBoxLayout.Direction.RightToLeft)  # ترتيب الأعمدة من اليمين لليسار
+        layout.setDirection(QHBoxLayout.Direction.RightToLeft)
 
         # --- الحقول ---
         combo = QComboBox()
         combo.addItem("اختر المنتج ....", None)
-        products = fetch_products()
-        for p in products:
-            combo.addItem(p[1], p[0])
+
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM products")
+        products = cur.fetchall()
+        conn.close()
+
+        for pid, pname in products:
+            combo.addItem(pname, pid)
+
         combo.setFixedWidth(160)
         combo.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
         combo.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
@@ -191,44 +198,20 @@ class AddPurchaseDialog(QDialog):
         subtotal.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtotal.setStyleSheet("font-weight: bold; color: #000;")
 
+        # حفظ المراجع على الـrow حتى نستخدمها لاحقًا بشكل مضبوط
+        row.combo = combo
+        row.unit_combo = unit_combo
+        row.price = price
+        row.qty = qty
+        row.subtotal = subtotal
+
         # ---------------- دوال مساعدة ----------------
         def update_units(idx):
-            unit_combo.clear()
-            product_id = combo.itemData(idx)
-
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-
-            # جلب جميع الوحدات
-            cur.execute("SELECT id, name FROM units")
-            all_units = cur.fetchall()
-
-            # جلب وحدة المنتج إن وجدت
-            selected_unit_id = None
-            if product_id:
-                cur.execute("SELECT unit_id FROM products WHERE id=?", (product_id,))
-                result = cur.fetchone()
-                if result:
-                    selected_unit_id = result[0]
-
-            conn.close()
-
-            # إضافة الوحدات لكل القائمة
-            for unit in all_units:
-                unit_combo.addItem(unit[1], unit[0])
-
-            # تحديد الوحدة الخاصة بالمنتج إذا وُجدت
-            if selected_unit_id:
-                index_to_select = unit_combo.findData(selected_unit_id)
-                if index_to_select != -1:
-                    unit_combo.setCurrentIndex(index_to_select)
-
             unit_combo.clear()
             product_id = combo.itemData(idx)
             if product_id:
                 conn = sqlite3.connect(DB_PATH)
                 cur = conn.cursor()
-                # جلب الوحدة الخاصة بالمنتج من جدول products مع جدول units
                 cur.execute("""
                     SELECT units.id, units.name 
                     FROM products 
@@ -236,14 +219,11 @@ class AddPurchaseDialog(QDialog):
                     WHERE products.id=?
                 """, (product_id,))
                 u = cur.fetchone()
-                # إضافة كل الوحدات الممكنة من جدول units
                 cur.execute("SELECT id, name FROM units")
                 all_units = cur.fetchall()
                 conn.close()
                 if u:
-                    # أضف الوحدة الخاصة أولاً
                     unit_combo.addItem(u[1], u[0])
-                # أضف باقي الوحدات (تجنب تكرار الوحدة نفسها)
                 for unit in all_units:
                     if u and unit[0] == u[0]:
                         continue
@@ -264,16 +244,16 @@ class AddPurchaseDialog(QDialog):
         qty.textChanged.connect(recalc)
         price.textChanged.connect(recalc)
 
-        # ---------------- Layouts ----------------
         def make_field_layout(label_text, widget):
-            layout = QVBoxLayout()
-            layout.setSpacing(2)
+            l = QVBoxLayout()
+            l.setSpacing(2)
             lbl = QLabel(label_text)
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-            layout.addWidget(lbl)
-            layout.addWidget(widget)
-            return layout
+            l.addWidget(lbl)
+            l.addWidget(widget)
+            return l
 
+        # ترتيب العرض كما عندك لكن المراجع محفوظة على row
         layout.addLayout(make_field_layout("المجموع:", subtotal))
         layout.addLayout(make_field_layout("الوحدة:", unit_combo))
         layout.addLayout(make_field_layout("الكمية:", qty))
@@ -319,20 +299,23 @@ class AddPurchaseDialog(QDialog):
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        cur.execute("INSERT INTO invoices (date, total_price) VALUES (?, ?)", (date_str, total_value))
+        # إضافة الفاتورة أولًا
+        cur.execute("INSERT INTO invoices (total_price, date) VALUES (?, ?)", (total_value, date_str))
         invoice_id = cur.lastrowid
 
+        # إضافة المنتجات المرتبطة بالفاتورة
         for i in range(self.scroll_layout.count()):
             row = self.scroll_layout.itemAt(i).widget()
-            combo = row.findChildren(QComboBox)[0]
-            unit_combo = row.findChildren(QComboBox)[1]
-            qty = row.findChildren(QLineEdit)[0]
-            price = row.findChildren(QLineEdit)[1]
 
-            product_id = combo.currentData()
-            unit_id = unit_combo.currentData()
-            quantity = float(qty.text())
-            price_per_unit = float(price.text())
+            product_id = row.combo.currentData()
+            unit_id = row.unit_combo.currentData()
+
+            try:
+                quantity = float(row.qty.text())
+                price_per_unit = float(row.price.text())
+            except ValueError:
+                continue
+
             total_price = quantity * price_per_unit
 
             if product_id and unit_id:
@@ -343,5 +326,6 @@ class AddPurchaseDialog(QDialog):
 
         conn.commit()
         conn.close()
+
         QMessageBox.information(self, "تم", "تم حفظ الفاتورة بنجاح ✅")
         self.accept()
