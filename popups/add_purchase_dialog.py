@@ -7,6 +7,9 @@ from PyQt6.QtCore import Qt, QTimer, QDateTime, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont
 from database.db_connection import DB_PATH
 from database.db_functions import fetch_products, insert_purchase
+from PyQt6.QtWidgets import QDateEdit
+from PyQt6.QtCore import QDate
+
 
 
 class AddPurchaseDialog(QDialog):
@@ -153,114 +156,132 @@ class AddPurchaseDialog(QDialog):
         main.addLayout(btns)
 
     # ---------------- Helpers ----------------
+ 
     def add_product_row(self):
-        row = QWidget()
-        row.setStyleSheet("background-color: #FFFFFF; border-radius: 10px;")
-        layout = QHBoxLayout(row)
-        layout.setSpacing(10)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setDirection(QHBoxLayout.Direction.RightToLeft)
+            row = QWidget()
+            row.setStyleSheet("background-color: #FFFFFF; border-radius: 10px;")
+            layout = QHBoxLayout(row)
+            layout.setSpacing(10)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setDirection(QHBoxLayout.Direction.RightToLeft)
 
-        # --- الحقول ---
-        combo = QComboBox()
-        combo.addItem("اختر المنتج ....", None)
+            # --- الحقول ---
+            combo = QComboBox()
+            combo.addItem("اختر المنتج ....", None)
 
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT id, name FROM products")
-        products = cur.fetchall()
-        conn.close()
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT id, name FROM products")
+            products = cur.fetchall()
+            conn.close()
 
-        for pid, pname in products:
-            combo.addItem(pname, pid)
+            for pid, pname in products:
+                combo.addItem(pname, pid)
 
-        combo.setFixedWidth(160)
-        combo.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
-        combo.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+            combo.setFixedWidth(160)
+            combo.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
+            combo.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
 
-        price = QLineEdit("0.00")
-        price.setFixedWidth(70)
-        price.setAlignment(Qt.AlignmentFlag.AlignRight)
-        price.setStyleSheet("background-color: #E8F5E9; border-radius: 6px;")
+            # تمكين البحث داخل الـ ComboBox
+            combo.setEditable(True)
+            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            completer = combo.completer()
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
 
-        qty = QLineEdit("0")
-        qty.setFixedWidth(50)
-        qty.setAlignment(Qt.AlignmentFlag.AlignRight)
-        qty.setStyleSheet("background-color: #E8F5E9; border-radius: 6px;")
+            price = QLineEdit("0.00")
+            price.setFixedWidth(70)
+            price.setAlignment(Qt.AlignmentFlag.AlignRight)
+            price.setStyleSheet("background-color: #E8F5E9; border-radius: 6px;")
 
-        unit_combo = QComboBox()
-        unit_combo.setFixedWidth(70)
-        unit_combo.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
-        unit_combo.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+            qty = QLineEdit("0")
+            qty.setFixedWidth(50)
+            qty.setAlignment(Qt.AlignmentFlag.AlignRight)
+            qty.setStyleSheet("background-color: #E8F5E9; border-radius: 6px;")
 
-        subtotal = QLabel("0.00 دج")
-        subtotal.setFixedWidth(80)
-        subtotal.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtotal.setStyleSheet("font-weight: bold; color: #000;")
+            unit_combo = QComboBox()
+            unit_combo.setFixedWidth(70)
+            unit_combo.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
+            unit_combo.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
 
-        # حفظ المراجع على الـrow حتى نستخدمها لاحقًا بشكل مضبوط
-        row.combo = combo
-        row.unit_combo = unit_combo
-        row.price = price
-        row.qty = qty
-        row.subtotal = subtotal
+            subtotal = QLabel("0.00 دج")
+            subtotal.setFixedWidth(80)
+            subtotal.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            subtotal.setStyleSheet("font-weight: bold; color: #000;")
 
-        # ---------------- دوال مساعدة ----------------
-        def update_units(idx):
-            unit_combo.clear()
-            product_id = combo.itemData(idx)
-            if product_id:
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT units.id, units.name 
-                    FROM products 
-                    JOIN units ON products.unit_id = units.id 
-                    WHERE products.id=?
-                """, (product_id,))
-                u = cur.fetchone()
-                cur.execute("SELECT id, name FROM units")
-                all_units = cur.fetchall()
-                conn.close()
-                if u:
-                    unit_combo.addItem(u[1], u[0])
-                for unit in all_units:
-                    if u and unit[0] == u[0]:
-                        continue
-                    unit_combo.addItem(unit[1], unit[0])
+            # ---------------- حقل تاريخ الانتهاء اختياري ----------------
+            expiry_date = QDateEdit()
+            expiry_date.setCalendarPopup(True)
+            expiry_date.setDisplayFormat("dd/MM/yyyy")
+            expiry_date.setDate(QDate.currentDate())
+            expiry_date.setFixedWidth(110)
+            expiry_date.setStyleSheet("background-color: #E8F5E9; border-radius: 6px; color: #000;")
+            # القيمة الافتراضية يمكن تركها، وإذا لم يملأها المستخدم، تعامل معها كـ NULL عند الحفظ
 
-        combo.currentIndexChanged.connect(update_units)
-        combo.setCurrentIndex(0)
-        update_units(0)
+            # حفظ المراجع على الـ row
+            row.combo = combo
+            row.unit_combo = unit_combo
+            row.price = price
+            row.qty = qty
+            row.subtotal = subtotal
+            row.expiry_date = expiry_date  # ← إضافة حقل تاريخ الانتهاء
 
-        def recalc():
-            try:
-                total = float(qty.text()) * float(price.text())
-                subtotal.setText(f"{total:.2f} دج")
-            except:
-                subtotal.setText("0.00 دج")
-            self.update_total_display()
+            # ---------------- دوال مساعدة ----------------
+            def update_units(idx):
+                unit_combo.clear()
+                product_id = combo.itemData(idx)
+                if product_id:
+                    conn = sqlite3.connect(DB_PATH)
+                    cur = conn.cursor()
+                    cur.execute("""
+                        SELECT units.id, units.name 
+                        FROM products 
+                        JOIN units ON products.unit_id = units.id 
+                        WHERE products.id=?
+                    """, (product_id,))
+                    u = cur.fetchone()
+                    cur.execute("SELECT id, name FROM units")
+                    all_units = cur.fetchall()
+                    conn.close()
+                    if u:
+                        unit_combo.addItem(u[1], u[0])
+                    for unit in all_units:
+                        if u and unit[0] == u[0]:
+                            continue
+                        unit_combo.addItem(unit[1], unit[0])
 
-        qty.textChanged.connect(recalc)
-        price.textChanged.connect(recalc)
+            combo.currentIndexChanged.connect(update_units)
+            combo.setCurrentIndex(0)
+            update_units(0)
 
-        def make_field_layout(label_text, widget):
-            l = QVBoxLayout()
-            l.setSpacing(2)
-            lbl = QLabel(label_text)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-            l.addWidget(lbl)
-            l.addWidget(widget)
-            return l
+            def recalc():
+                try:
+                    total = float(qty.text()) * float(price.text())
+                    subtotal.setText(f"{total:.2f} دج")
+                except:
+                    subtotal.setText("0.00 دج")
+                self.update_total_display()
 
-        # ترتيب العرض كما عندك لكن المراجع محفوظة على row
-        layout.addLayout(make_field_layout("المجموع:", subtotal))
-        layout.addLayout(make_field_layout("الوحدة:", unit_combo))
-        layout.addLayout(make_field_layout("الكمية:", qty))
-        layout.addLayout(make_field_layout("سعر الوحدة:", price))
-        layout.addLayout(make_field_layout("المنتج:", combo))
+            qty.textChanged.connect(recalc)
+            price.textChanged.connect(recalc)
 
-        self.scroll_layout.addWidget(row)
+            def make_field_layout(label_text, widget):
+                l = QVBoxLayout()
+                l.setSpacing(2)
+                lbl = QLabel(label_text)
+                lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+                l.addWidget(lbl)
+                l.addWidget(widget)
+                return l
+
+            # ترتيب الحقول مع إضافة حقل تاريخ الانتهاء
+            layout.addLayout(make_field_layout("تاريخ الانتهاء (اختياري):", expiry_date))
+            layout.addLayout(make_field_layout("المجموع:", subtotal))
+            layout.addLayout(make_field_layout("الوحدة:", unit_combo))
+            layout.addLayout(make_field_layout("الكمية:", qty))
+            layout.addLayout(make_field_layout("سعر الوحدة:", price))
+            layout.addLayout(make_field_layout("المنتج:", combo))
+
+            self.scroll_layout.addWidget(row)
 
     def handle_add_more(self):
         self.add_product_row()
@@ -294,7 +315,8 @@ class AddPurchaseDialog(QDialog):
             QMessageBox.warning(self, "تنبيه", "يجب إضافة منتج واحد على الأقل.")
             return
 
-        date_str = f"{self.date_edit.text()} {self.time_edit.text()}"
+        now = QDateTime.currentDateTime()
+        date_str = now.toString("yyyy-MM-dd HH:mm:ss")
 
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
@@ -318,11 +340,16 @@ class AddPurchaseDialog(QDialog):
 
             total_price = quantity * price_per_unit
 
+            # الحصول على تاريخ الانتهاء، إذا لم يختاره المستخدم يكون None
+            expiry_qdate = row.expiry_date.date()  # QDate
+            expiry_str = expiry_qdate.toString("yyyy-MM-dd") if expiry_qdate else None
+
             if product_id and unit_id:
                 cur.execute("""
-                    INSERT INTO purchases (invoice_id, product_id, unit_id, quantity, price_per_unit, total_price, date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (invoice_id, product_id, unit_id, quantity, price_per_unit, total_price, date_str))
+                    INSERT INTO purchases 
+                    (invoice_id, product_id, unit_id, quantity, price_per_unit, total_price, date, expiry_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (invoice_id, product_id, unit_id, quantity, price_per_unit, total_price, date_str, expiry_str))
 
         conn.commit()
         conn.close()

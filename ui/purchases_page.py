@@ -6,7 +6,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtCore import Qt, QSize
-from database.db_functions import fetch_products_with_invoice, fetch_invoices, delete_product_from_invoice
+from database.db_functions import (
+    fetch_products_with_invoice, 
+    fetch_invoices, 
+    delete_product_from_invoice,
+    delete_invoice
+)
+
 from popups.add_purchase_dialog import AddPurchaseDialog
 from functools import partial
 from popups.edit_purchase_dialog import EditPurchaseDialog
@@ -62,10 +68,11 @@ class PurchasesPage(QWidget):
         main_layout.addLayout(products_toolbar)
 
         self.products_table = QTableWidget()
-        self.products_table.setColumnCount(6)
+        self.products_table.setColumnCount(7)
         self.products_table.setHorizontalHeaderLabels(
-            ["اسم المنتج", "تاريخ الفاتورة", "سعر الوحدة", "الكمية",  "السعر الإجمالي", "الإجراءات"]
+            ["اسم المنتج", "تاريخ الفاتورة", "تاريخ الانتهاء", "سعر الوحدة", "الكمية", "السعر الإجمالي", "الإجراءات"]
         )
+
         self.setup_table_style(self.products_table)
         self.products_table.setMaximumHeight(10 * 40 + 40)
         self.products_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -156,6 +163,7 @@ class PurchasesPage(QWidget):
         for idx, r in enumerate(rows_sorted):
             name = r["product_name"]
             date = r["invoice_date"]
+            expiry_date = r["expiry_date"] if r["expiry_date"] else "-"
             price_per_unit = float(r["price_per_unit"])
             quantity = float(r["quantity"])
             total = float(r["total_price"])
@@ -165,10 +173,13 @@ class PurchasesPage(QWidget):
                 continue
 
             self.products_table.insertRow(row_idx)
-            self.products_table.setItem(row_idx, 0, QTableWidgetItem(name))
-            self.products_table.setItem(row_idx, 1, QTableWidgetItem(date))
 
-            # أيقونات الأسهم
+            # الأعمدة الأساسية
+            self.products_table.setItem(row_idx, 0, QTableWidgetItem(name))          # اسم المنتج
+            self.products_table.setItem(row_idx, 1, QTableWidgetItem(date))          # تاريخ الفاتورة
+            self.products_table.setItem(row_idx, 2, QTableWidgetItem(expiry_date))   # تاريخ الانتهاء
+
+            # أيقونات الأسهم وسعر الوحدة
             icon_label = QLabel()
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "icons")
@@ -177,7 +188,6 @@ class PurchasesPage(QWidget):
             equal_icon = os.path.join(icon_dir, "equal.svg")
 
             if idx == last_purchase_index[name]:
-                # مقارنة مع العملية السابقة (الأقدم)
                 next_price = None
                 for next_r in rows_sorted[idx+1:]:
                     if next_r["product_name"] == name:
@@ -202,10 +212,11 @@ class PurchasesPage(QWidget):
             layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(icon_label)
             layout.addWidget(QLabel(f"{price_per_unit:.2f}"))
-            self.products_table.setCellWidget(row_idx, 2, price_widget)
+            self.products_table.setCellWidget(row_idx, 3, price_widget)             # سعر الوحدة مع الأيقونات
 
-            self.products_table.setItem(row_idx, 3, QTableWidgetItem(str(quantity)))
-            self.products_table.setItem(row_idx, 4, QTableWidgetItem(f"{total:.2f}"))
+            # بقية الأعمدة
+            self.products_table.setItem(row_idx, 4, QTableWidgetItem(str(quantity)))   # الكمية
+            self.products_table.setItem(row_idx, 5, QTableWidgetItem(f"{total:.2f}")) # السعر الإجمالي
 
             # أزرار الإجراءات
             self.add_action_buttons(self.products_table, row_idx, r["purchase_id"], record_type="product")
@@ -234,6 +245,7 @@ class PurchasesPage(QWidget):
     # ==========================
     # Add buttons to table row
     # ==========================
+    
     def add_action_buttons(self, table, row_idx, record_id, record_type="product"):
         icon_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "icons")
         icons = {
@@ -303,9 +315,13 @@ class PurchasesPage(QWidget):
         if confirm == QMessageBox.StandardButton.Yes:
             if record_type == "product":
                 delete_product_from_invoice(record_id)
+                QMessageBox.information(self, "تم", "تم حذف المنتج من الفاتورة ✅")
+            elif record_type == "invoice":
+                if delete_invoice(record_id):
+                    QMessageBox.information(self, "تم", "تم حذف الفاتورة وكل المنتجات المرتبطة بها ✅")
+            # إعادة تحميل الجداول مباشرة بعد الحذف
             self.load_products()
             self.load_invoices()
-            QMessageBox.information(self, "تم", "تم الحذف بنجاح ✅")
 
     def edit_record(self, record_id, record_type="product"):
         if record_type == "product":

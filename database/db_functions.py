@@ -99,7 +99,8 @@ def fetch_products_with_invoice():
             i.date AS invoice_date,
             p.quantity AS quantity,
             p.price_per_unit AS price_per_unit,
-            p.total_price AS total_price
+            p.total_price AS total_price,
+            p.expiry_date AS expiry_date  -- ← إضافة هذا الحقل
         FROM purchases p
         JOIN products pr ON p.product_id = pr.id
         JOIN invoices i ON p.invoice_id = i.id
@@ -149,3 +150,18 @@ def delete_product_from_invoice(purchase_id):
     cur.execute("DELETE FROM purchases WHERE id=?", (purchase_id,))
     conn.commit()
     conn.close()
+def delete_invoice(invoice_id):
+    """حذف فاتورة وكل مشترياتها المرتبطة"""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # حذف كل مشتريات الفاتورة
+        cur.execute("DELETE FROM purchases WHERE invoice_id = ?", (invoice_id,))
+        # حذف الفاتورة نفسها
+        cur.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.Error as e:
+        print("Error deleting invoice:", e)
+        return False

@@ -1,45 +1,40 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextEdit
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt
 
 class ProductDetailsDialog(QDialog):
     def __init__(self, product_data):
         super().__init__()
-        self.product_data = product_data
+        self.product_data = product_data  # tuple: (id, name, category, description)
         self.setWindowTitle("تفاصيل المنتج")
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setFixedWidth(400)
         self.setup_ui()
 
     def setup_ui(self):
-        self.setStyleSheet("""
-            QDialog { background-color: #E8F5E9; }
-            QLabel { font-size: 14px; color: black; }
-            QTextEdit { 
-                background-color: white; 
-                color: black; 
-                border: 1px solid #A5D6A7; 
-                border-radius: 8px; 
-                font-size: 14px; 
-                padding: 6px;
-            }
-        """)
-
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
 
-        product_id, name, category, expiry_date, description = self.product_data
+        prod_id, name, category, description = self.product_data  # الآن 4 عناصر فقط
 
         lbl_name = QLabel(f"<b>اسم المنتج:</b> {name}")
-        lbl_category = QLabel(f"<b>الفئة:</b> {category or 'غير مصنف'}")
-        lbl_expiry = QLabel(f"<b>تاريخ الانتهاء:</b> {expiry_date or 'غير محدد'}")
-        lbl_desc = QLabel("<b>الوصف:</b>")
-        txt_desc = QTextEdit()
-        txt_desc.setReadOnly(True)
-        txt_desc.setPlainText(description or "")
-        txt_desc.setFixedHeight(80)
+        lbl_name.setWordWrap(True)
+        layout.addWidget(lbl_name)
 
-        for w in [lbl_name, lbl_category, lbl_expiry, lbl_desc, txt_desc]:
-            layout.addWidget(w)
+        lbl_category = QLabel(f"<b>الفئة:</b> {category if category else 'غير مصنف'}")
+        lbl_category.setWordWrap(True)
+        layout.addWidget(lbl_category)
+
+        lbl_description = QLabel(f"<b>الوصف:</b> {description if description else 'لا يوجد وصف'}")
+        lbl_description.setWordWrap(True)
+        layout.addWidget(lbl_description)
+
+        # زر إغلاق
+        btn_close = QPushButton("إغلاق")
+        btn_close.clicked.connect(self.accept)
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
 
         self.setLayout(layout)

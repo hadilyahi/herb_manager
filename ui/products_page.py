@@ -41,7 +41,6 @@ class ProductsPage(QWidget):
             }
         """)
 
-       
         btn_add_category = QPushButton("➕ إضافة فئة جديدة")
         btn_add_product = QPushButton("➕ إضافة منتج جديد")
         for btn in [btn_add_category, btn_add_product]:
@@ -57,17 +56,16 @@ class ProductsPage(QWidget):
         btn_add_category.clicked.connect(self.open_add_category_popup)
         btn_add_product.clicked.connect(self.open_add_product_popup)
 
-      
         top_layout = QHBoxLayout()
         top_layout.addWidget(self.search_input)
         top_layout.addStretch()
         top_layout.addWidget(btn_add_product)
         top_layout.addWidget(btn_add_category)
 
-      
+        # الجدول بدون عمود "تاريخ الانتهاء"
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["المنتج", "الفئة", "تاريخ الانتهاء", "الوصف", "التفاصيل"])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["المنتج", "الفئة", "الوصف", "التفاصيل"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -92,7 +90,6 @@ class ProductsPage(QWidget):
             }
         """)
 
-      
         layout = QVBoxLayout()
         layout.addWidget(title)
         layout.addLayout(top_layout)
@@ -100,7 +97,7 @@ class ProductsPage(QWidget):
         self.setLayout(layout)
 
     def load_data(self):
-        self.products = fetch_products()  
+        self.products = fetch_products()
         self.display_products(self.products)
 
     def display_products(self, products):
@@ -108,15 +105,14 @@ class ProductsPage(QWidget):
         for row, (prod_id, name, category, expiry_date, description) in enumerate(products):
             self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem(category if category else "غير مصنف"))
-            self.table.setItem(row, 2, QTableWidgetItem(expiry_date if expiry_date else "—"))
-            self.table.setItem(row, 3, QTableWidgetItem(description if description else "—"))
-            self.table.setCellWidget(row, 4, self.create_action_buttons(prod_id, name, category, expiry_date, description))
+            self.table.setItem(row, 2, QTableWidgetItem(description if description else "—"))
+            self.table.setCellWidget(row, 3, self.create_action_buttons(prod_id, name, category, description))
 
     def on_search_text_changed(self, text):
         filtered = [p for p in self.products if text.lower() in p[1].lower()]
         self.display_products(filtered)
 
-    def create_action_buttons(self, prod_id, name, category, expiry_date, description):
+    def create_action_buttons(self, prod_id, name, category, description):
         layout = QHBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(10)
@@ -131,13 +127,13 @@ class ProductsPage(QWidget):
         btn_edit.setIcon(QIcon("assets/icons/edit.svg"))
         btn_edit.setToolTip("تعديل")
         btn_edit.setStyleSheet("background: none; border: none;")
-        btn_edit.clicked.connect(lambda _, data=(prod_id, name, category, expiry_date, description): self.edit_product(data))
+        btn_edit.clicked.connect(lambda _, data=(prod_id, name, category, description): self.edit_product(data))
 
         btn_info = QPushButton()
         btn_info.setIcon(QIcon("assets/icons/more.svg"))
         btn_info.setToolTip("تفاصيل")
         btn_info.setStyleSheet("background: none; border: none;")
-        btn_info.clicked.connect(lambda _, data=(prod_id, name, category, expiry_date, description): self.show_details(data))
+        btn_info.clicked.connect(lambda _, data=(prod_id, name, category, description): self.show_details(data))
 
         for btn in [btn_delete, btn_edit, btn_info]:
             layout.addWidget(btn)
@@ -146,7 +142,7 @@ class ProductsPage(QWidget):
         container.setLayout(layout)
         return container
 
-  
+    # الدوال الأخرى تبقى كما هي
     def delete_product(self, prod_id, name):
         def on_confirm():
             conn = get_connection()
@@ -160,33 +156,35 @@ class ProductsPage(QWidget):
         popup.exec()
 
     def edit_product(self, product_data):
-        def on_save(name, category_id, unit_id, expiry_date, description):
+        # product_data = (prod_id, name, category, description)
+        def on_save(name, category_id, unit_id, description):
             conn = get_connection()
             cur = conn.cursor()
             cur.execute("""
                 UPDATE products
-                SET name=?, category_id=?, unit_id=?, expiry_date=?, description=?
+                SET name=?, category_id=?, unit_id=?, description=?
                 WHERE id=?
-            """, (name, category_id, unit_id, expiry_date, description, product_data[0]))
+            """, (name, category_id, unit_id, description, product_data[0]))
             conn.commit()
             conn.close()
             self.load_data()
 
-        popup = EditProductForm(product_data, on_save)
+        popup = EditProductForm(product_data, on_save)  # يجب تعديل EditProductForm لتتعامل بدون expiry_date
+        popup.exec()
+
+    def show_details(self, product_data):
+        popup = ProductDetailsDialog(product_data)  # يجب تعديل ProductDetailsDialog لتتعامل بدون expiry_date
         popup.exec()
 
     def show_details(self, product_data):
         popup = ProductDetailsDialog(product_data)
         popup.exec()
 
- 
     def open_add_category_popup(self):
         categories_list = fetch_categories()
-
         def on_save(name, parent_id):
             add_category_to_db(name, parent_id)
             self.load_data()
-
         popup = AddCategoryForm(on_save)
         popup.exec()
 
@@ -195,9 +193,9 @@ class ProductsPage(QWidget):
             conn = get_connection()
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO products (name, category_id, unit_id, expiry_date, description)
-                VALUES (?, ?, ?, ?, ?)
-            """, (name, category_id, unit_id, expiry_date, description))
+                INSERT INTO products (name, category_id, unit_id, description)
+                VALUES (?, ?, ?, ?)
+            """, (name, category_id, unit_id, description))
             conn.commit()
             conn.close()
             self.load_data()

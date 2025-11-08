@@ -24,8 +24,8 @@ class DeleteProductDialog(QDialog):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         btn_layout = QHBoxLayout()
-        btn_cancel = QPushButton("إلغاء")
         btn_confirm = QPushButton("حذف")
+        btn_cancel = QPushButton("إلغاء")
         btn_cancel.clicked.connect(self.reject)
         btn_confirm.clicked.connect(self.confirm_delete)
         btn_layout.addWidget(btn_cancel)

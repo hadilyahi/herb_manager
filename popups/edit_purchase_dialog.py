@@ -1,9 +1,9 @@
 import sqlite3
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
-    QPushButton, QMessageBox
+    QPushButton, QMessageBox, QDateEdit
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 from database.db_connection import DB_PATH
 
@@ -34,7 +34,7 @@ class EditPurchaseDialog(QDialog):
         self.name_label = QLabel("اسم المنتج:")
         self.name_label.setFont(QFont("29LT Bukra", 12))
         self.name_input = QLineEdit()
-        self.name_input.setReadOnly(True)  # لا نغير اسم المنتج هنا
+        self.name_input.setReadOnly(True)
         layout.addWidget(self.name_label)
         layout.addWidget(self.name_input)
 
@@ -58,6 +58,17 @@ class EditPurchaseDialog(QDialog):
         self.unit_combo = QComboBox()
         layout.addWidget(self.unit_label)
         layout.addWidget(self.unit_combo)
+
+        # تاريخ الانتهاء
+        self.expiry_label = QLabel("تاريخ الانتهاء (اختياري):")
+        self.expiry_label.setFont(QFont("29LT Bukra", 12))
+        self.expiry_date = QDateEdit()
+        self.expiry_date.setCalendarPopup(True)
+        self.expiry_date.setDisplayFormat("dd/MM/yyyy")
+        self.expiry_date.setFixedWidth(120)
+        self.expiry_date.setDate(QDate.currentDate())
+        layout.addWidget(self.expiry_label)
+        layout.addWidget(self.expiry_date)
 
         # الأزرار
         btns = QHBoxLayout()
@@ -93,7 +104,8 @@ class EditPurchaseDialog(QDialog):
                 pr.price_per_unit,
                 pr.unit_id,
                 pr.total_price,
-                pr.date
+                pr.date,
+                pr.expiry_date
             FROM purchases pr
             JOIN products prod ON prod.id = pr.product_id
             WHERE pr.id=?
@@ -117,6 +129,12 @@ class EditPurchaseDialog(QDialog):
             if idx >= 0:
                 self.unit_combo.setCurrentIndex(idx)
 
+            # تعيين تاريخ الانتهاء إذا موجود
+            if row["expiry_date"]:
+                dt = QDate.fromString(row["expiry_date"], "yyyy-MM-dd")
+                if dt.isValid():
+                    self.expiry_date.setDate(dt)
+
         conn.close()
 
     def save_changes(self):
@@ -138,13 +156,16 @@ class EditPurchaseDialog(QDialog):
         unit_id = self.unit_combo.currentData()
         total = qty * price
 
+        expiry_qdate = self.expiry_date.date()
+        expiry_str = expiry_qdate.toString("yyyy-MM-dd") if expiry_qdate else None
+
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute("""
             UPDATE purchases
-            SET quantity=?, price_per_unit=?, total_price=?, unit_id=?
+            SET quantity=?, price_per_unit=?, total_price=?, unit_id=?, expiry_date=?
             WHERE id=?
-        """, (qty, price, total, unit_id, self.record_id))
+        """, (qty, price, total, unit_id, expiry_str, self.record_id))
         conn.commit()
         conn.close()
 
